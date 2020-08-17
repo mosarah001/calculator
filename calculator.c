@@ -16,6 +16,14 @@
 #define DEFAULTPRECISION 5
 #define FUNCTIONSEPARATOR "|"
 
+#ifndef NAN
+#define NAN (0.0/0.0)
+#endif
+
+#ifndef INFINITY
+#define INFINITY (1.0/0.0)
+#endif
+
 typedef enum
 {
 	addop,
@@ -127,18 +135,20 @@ number toDegrees(number radians)
 	return radians * 180.0 / PI;
 }
 
-token doFunc(Stack *s, token function)
+int doFunc(Stack *s, token function)
 {
 	if (stackSize(s) == 0)
 	{
 		raise(inputMissing);
-		return "NaN";
+		stackPush(s, num2Str(NAN));
+		return -1;
 	}
 	else if (stackSize(s) == 1 && strcmp(stackTop(s), FUNCTIONSEPARATOR) == 0)
 	{
 		stackPop(s);
 		raise(inputMissing);
-		return "NaN";
+		stackPush(s, num2Str(NAN));
+		return -1;
 	}
 	token input = (token)stackPop(s);
 	number num = buildNumber(input);
@@ -302,6 +312,7 @@ token doFunc(Stack *s, token function)
 
 int doOp(Stack *s, token op)
 {
+	int err = 0;
 	token roperand = (token)stackPop(s);
 	token loperand = (token)stackPop(s);
 	number lside = buildNumber(loperand);
@@ -324,7 +335,11 @@ int doOp(Stack *s, token op)
 				if(rside == 0)
 				{
 					raise(divZero);
-					return -1;
+					if (lside == 0)
+						ret = NAN;
+					else
+						ret = INFINITY;
+					err = -1;
 				}
 				else
 					ret = lside / rside;
@@ -335,7 +350,11 @@ int doOp(Stack *s, token op)
 				if(rside == 0)
 				{
 					raise(divZero);
-					return -1;
+					if (lside == 0)
+						ret = NAN;
+					else
+						ret = INFINITY;
+					err = -1;
 				}
 				else
 				{
@@ -356,7 +375,7 @@ int doOp(Stack *s, token op)
 			break;
 	}
 	stackPush(s, num2Str(ret));
-	return 0;
+	return err;
 }
 
 /*
@@ -521,6 +540,11 @@ bool isFunction(token tk)
 		|| strncmp(tk, "exp", 3) == 0);
 }
 
+bool isSpecialValue(token tk)
+{
+	return (strncmp(tk, "nan", 3) == 0 || strncmp(tk, "inf", 3) == 0);
+}
+
 Symbol tokenType(token tk)
 {
 	if (!tk)
@@ -531,6 +555,8 @@ Symbol tokenType(token tk)
 		case text:
 			if(isFunction(tk))
 				ret = function;
+			else if(isSpecialValue(tk))
+				ret = value;
 			else
 				ret = identifier;
 			break;
@@ -717,7 +743,6 @@ int tokenize(char *str, char *(**tokensRef))
 			tmp = (char**)realloc(tokens, numTokens * sizeof(char*));
 			if (tmp == NULL)
 			{
-				free(newToken);
 				if (tokens != NULL)
 				{
 					for(i=0;i<numTokens-1;i++)
